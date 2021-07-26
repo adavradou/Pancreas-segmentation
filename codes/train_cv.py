@@ -2,8 +2,9 @@
 # -*- coding: utf-8 -*-
 """
 Created on Sun Mar 21 2021
-
 @author: Agapi Davradou
+
+This module contains the main code for training the model.
 """
 
 from __future__ import division, print_function
@@ -21,6 +22,7 @@ from metrics import dice_coef, dice_coef_loss
 from augmenters import *
 from sklearn.model_selection import KFold
 import gc
+from argparser import args
 
 
 def img_resize(imgs, img_rows, img_cols, equalize=True):
@@ -48,7 +50,7 @@ def data_to_array(img_rows, img_cols):
     masks = []
     for filename in train_list:
 
-        itkimage = sitk.ReadImage('../data/train/' + filename)
+        itkimage = sitk.ReadImage(args.input_path + '/train/' + filename)
         itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip to show correct.
         imgs = sitk.GetArrayFromImage(itkimage)
 
@@ -67,8 +69,8 @@ def data_to_array(img_rows, img_cols):
     # Smooth images using CurvatureFlow
     images = smooth_images(images)
 
-    np.save('../data/X_train.npy', images)
-    np.save('../data/y_train.npy', masks)
+    np.save(args.input_path + '/X_train.npy', images)
+    np.save(args.input_path + '/y_train.npy', masks)
 
     print("-" * 30)
     print("Saved train.npy")
@@ -79,8 +81,8 @@ def load_data():
     print("-" * 30)
     print("Loading data ...")
 
-    X_train = np.load('../data/X_train.npy')
-    y_train = np.load('../data/y_train.npy')
+    X_train = np.load(args.input_path + '/X_train.npy')
+    y_train = np.load(args.input_path + '/y_train.npy')
 
     print("Data loading finished.")
     print("-" * 30)
@@ -123,7 +125,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
     if regenerate:
         data_to_array(img_rows, img_cols)
 
-    kf = KFold(n_splits=4)
+    kf = KFold(n_splits=args.folds)
 
     X_train, y_train = load_data()
     img_rows = X_train.shape[1]
@@ -174,7 +176,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         image_datagen_val = ImageDataGenerator(**data_gen_args)
         mask_datagen_val = ImageDataGenerator(**data_gen_args)
 
-        seed = 2
+        seed = args.seed
         image_datagen.fit(X_train[train_index], seed=seed)
         mask_datagen.fit(y_train[train_index], seed=seed)
         image_datagen_val.fit(X_train[val_index], seed=seed)
@@ -188,7 +190,8 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         train_generator = (pair for pair in zip(image_generator, mask_generator))
         valid_generator = (pair for pair in zip(image_generator_val, mask_generator_val))
 
-        model = UNet((img_rows, img_cols, 1), start_ch=6, depth=5, batchnorm=True, dropout=0.5, maxpool=True, residual=True)
+        model = UNet((img_rows, img_cols, 1), start_ch=args.channels, depth=args.depth, batchnorm=args.batchnorm,
+                     dropout=args.dropout, maxpool=args.maxpool, residual=args.residual)
         #    model.load_weights('../data/weights.h5')
 
         model.summary()
@@ -197,14 +200,13 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         c_backs = [model_checkpoint]
         c_backs.append(EarlyStopping(monitor='val_loss', min_delta=0.001, patience=15))
 
-        model.compile(optimizer=Adam(lr=0.0001), loss=dice_coef_loss, metrics=[dice_coef])
+        model.compile(optimizer=Adam(lr=args.learningrate), loss=dice_coef_loss, metrics=[dice_coef])
 
         model_history = model.fit_generator(
             train_generator,
             steps_per_epoch=n_imgs_train // batch_size,
-            epochs=1000,
-            verbose=2,
-            shuffle=True,
+            epochs=args.epochs,
+            verbose=args.verbose,
             validation_data=valid_generator,
             validation_steps=n_imgs_valid // batch_size,
             callbacks=c_backs,
@@ -225,7 +227,7 @@ if __name__ == '__main__':
     import time
 
     start = time.time()
-    keras_fit_generator(img_rows=256, img_cols=256, regenerate=False, batch_size=128)
+    keras_fit_generator(img_rows=args.image_size, img_cols=args.image_size, regenerate=args.regenerate, batch_size=args.batch_size)
 
     end = time.time()
 
