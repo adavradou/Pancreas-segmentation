@@ -1,9 +1,14 @@
+"""
+Created on Sun Feb 21 2020
+@author: Agapi Davradou
+
+This module contains the model's definition code.
+"""
 
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import Input, concatenate, Conv2D, MaxPooling2D, Conv2DTranspose
-from tensorflow.keras.layers import  add, UpSampling2D, Dropout, Cropping2D, BatchNormalization
-from tensorflow.keras.initializers import RandomNormal, VarianceScaling
-import numpy as np
+from tensorflow.keras.layers import  UpSampling2D, Dropout, BatchNormalization
+from tensorflow.keras.initializers import VarianceScaling
 
 #Adopted from https://github.com/pietz/unet-keras
 #Added kernel initializers based on VarianceScaling
@@ -45,5 +50,5 @@ def UNet(img_shape, out_ch=1, start_ch=64, depth=4, inc_rate=2., activation='rel
 
 if  __name__=='__main__':
 
-    model = UNet((256, 256,1), start_ch=6, depth=5, batchnorm=True, dropout=0.5, upconv=True, maxpool=True, residual=True)
+    model = UNet((256, 256, 1), start_ch=6, depth=5, batchnorm=True, dropout=0.5, upconv=True, maxpool=True, residual=True)
     model.summary()
