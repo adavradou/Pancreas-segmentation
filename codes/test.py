@@ -6,28 +6,26 @@ This module contains the main code for training the model.
 """
 
 from __future__ import division, print_function
-from tensorflow.keras.optimizers import Adam
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
-import os
-from skimage.measure import find_contours
-from skimage.exposure import equalize_adapthist
-from models import *
-from metrics import *
-from augmenters import *
+from dataloader import *
 from argparser import args
 import gc
 import glob
+import cv2
+import numpy as np
+import SimpleITK as sitk
+from metrics import *
+from models import *
+from skimage.measure import find_contours
+from tensorflow.keras.optimizers import Adam
+
 
 
 def img_resize(imgs, img_rows, img_cols, equalize=True):
     new_imgs = np.zeros([len(imgs), img_rows, img_cols])
     for mm, img in enumerate(imgs):
-        if equalize:
-            img = equalize_adapthist(img, clip_limit=0.05)
-            # img = clahe.apply(cv2.convertScaleAbs(img))
-
         new_imgs[mm] = cv2.resize(img, (img_rows, img_cols), interpolation=cv2.INTER_NEAREST)
 
     return new_imgs
@@ -216,6 +214,7 @@ def read_test_data(folder=args.test_path + '/test/', img_rows=256, img_cols=256,
         imgs = sitk.GetArrayFromImage(itkimage)
         #        imgs = imgs.astype(int)
         imgs = img_resize(imgs, img_rows, img_cols, equalize=False)  # img_rows
+
         images.append(imgs)
         n_imgs.append(len(imgs))
 
@@ -255,7 +254,7 @@ if __name__ == '__main__':
     print("-" * 30)
     print("Predicting segmentation ...")
     print("-" * 30)
-    predict_test(x_list, X_test, y_test, plot=args.plot_results)
+    #predict_test(x_list, X_test, y_test, plot=args.plot_results)
 
     print("-" * 30)
     print("Calculating Dice score ...")
@@ -271,7 +270,6 @@ if __name__ == '__main__':
     print("Number of 1s: " +  str((y_pred == 1).sum()))
     print("Number of 0s: " + str((y_pred == 0).sum()))
     plt.imsave("y_pred.png", y_pred[100, :, :], cmap='gray')
-
 
     print("Dice score before optimization: ")
     check_predictions(y_test, y_pred)
