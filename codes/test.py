@@ -23,6 +23,7 @@ from tensorflow.keras.optimizers import Adam
 
 
 
+
 def img_resize(imgs, img_rows, img_cols, equalize=True):
     new_imgs = np.zeros([len(imgs), img_rows, img_cols])
     for mm, img in enumerate(imgs):
@@ -180,7 +181,7 @@ def optimize(segm_3D_array):
         first_slice = segm_3D_array[current_slice - 1, :, :]
         middle_slice = segm_3D_array[current_slice, :, :]
         last_slice = segm_3D_array[current_slice + 1, :, :]
-        print(str(current_slice) + " / " + str(total_slices))
+        #print(str(current_slice) + " / " + str(total_slices))
 
         for x in range(0, middle_slice.shape[0]):
             for y in range(0, middle_slice.shape[1]):
@@ -201,81 +202,127 @@ def optimize(segm_3D_array):
 def check_predictions(true_label, prediction):
     print('Accuracy:', numpy_dice(true_label, prediction))
 
+    return numpy_dice(true_label, prediction)
 
-def read_test_data(folder=args.test_path + '/test/', img_rows=256, img_cols=256, volume_name='.nii.gz'):
-    fileList = os.listdir(folder)
-    fileList = filter(lambda x: volume_name in x, fileList)
-    fileList = sorted(fileList)
-    n_imgs = []
+
+
+def read_test_data(fileList = args.test_path + '/test/'):
+
     images = []
+    masks = []
     for filename in fileList:
-        itkimage = sitk.ReadImage(folder + filename)
+        itkimage = sitk.ReadImage(args.test_path + '/test/' + filename)
         itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip to show correct.
         imgs = sitk.GetArrayFromImage(itkimage)
-        #        imgs = imgs.astype(int)
-        imgs = img_resize(imgs, img_rows, img_cols, equalize=False)  # img_rows
 
-        images.append(imgs)
-        n_imgs.append(len(imgs))
+        if 'label' in filename.lower():
+            imgs = img_resize(imgs, args.image_size, args.image_size)
+            masks.append(imgs)
 
-    images = np.concatenate(images, axis=0).reshape(-1, img_rows, img_cols, 1)  # img_rows
+        else:
+            imgs = img_resize(imgs, args.image_size, args.image_size)
+            images.append(imgs)
+
+    images = np.concatenate(images, axis=0).reshape(-1, args.image_size, args.image_size, 1)
     images = smooth_images(images)
-    return images, fileList
+    masks = np.concatenate(masks, axis=0).reshape(-1, args.image_size, args.image_size, 1)
+    masks = masks.astype(int)
+
+    if (images.shape != masks.shape):
+        raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
+
+    return images, masks
 
 
 
-def read_cases(the_list=None, flip=True, folder='../data/train/', name='/*0080*.nii.gz'):
-    filenames = glob.glob(folder + name, recursive=True)  # Add pancreas to exclude label files.
+#def read_cases(the_list=None, flip=True, folder='../data/test/', name='/*segmentation*.nii.gz', num = ''):
+def read_cases(flip, folder, name):
+    filenames = glob.glob(folder + name, recursive=True)
 
     for filename in filenames:
         itkimage = sitk.ReadImage(filename)
         if flip:
-            itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip images, because they are shown reversed.
+            itkimage = sitk.Flip(itkimage, [False, True, False])
         img = sitk.GetArrayFromImage(itkimage)
 
         return img
 
 
+
+
 if __name__ == '__main__':
-    volume_name = args.volume_name
 
     print("-" * 30)
     print("Reading test data ...")
     print("-" * 30)
-    X_test, x_list = read_test_data(args.test_path + '/test/', args.image_size, args.image_size, volume_name) #Read test data
-    y_test, y_list = read_test_data(args.test_path + '/test_labels/', args.image_size, args.image_size, volume_name) #Read test labels
-    y_test = y_test.astype(int)
 
-    plt.imsave("X_test.png", X_test[100, :, :, 0], cmap='gray')
-    plt.imsave("y_test.png", y_test[100, :, :, 0], cmap='gray')
-    print("Test shape: " + str(X_test.shape))
-    print("Label shape: " + str(y_test.shape))
+    test_data_list = os.listdir(args.test_path + '/test/')
+    label_list = list(filter(lambda x: 'label' in x, test_data_list))
+    test_list = list(filter(lambda x: x not in label_list, test_data_list))
+    test_data_list = sorted(test_data_list)
+    test_list = sorted(test_list)
+    label_list = sorted(label_list)
+    print("test_data_list: " + str(test_data_list))
+    print("test_list: " + str(test_list))
+    print("label_list: " + str(label_list))
+
+    images, masks = read_test_data(test_data_list) #Read test data
+
+    plt.imsave("test_image.png", images[100, :, :, 0], cmap='gray')
+    plt.imsave("label_image.png", masks[100, :, :, 0], cmap='gray')
+    print("Test shape: " + str(images.shape))
+    print("Label shape: " + str(masks.shape))
 
     print("-" * 30)
     print("Predicting segmentation ...")
     print("-" * 30)
-    #predict_test(x_list, X_test, y_test, plot=args.plot_results)
+    predict_test(test_list, images, masks, plot=args.plot_results)
+
 
     print("-" * 30)
     print("Calculating Dice score ...")
     print("-" * 30)
-    del X_test, y_test
+    del images, masks
     gc.collect()  # Invoke Garbage Collector
 
-    y_test = read_cases(flip = True, folder=args.test_path + '/test_labels/', name = '/*' + volume_name + '*.nii.gz')  #Read test labels
-    print("Label reread shape: " + str(y_test.shape))
-    plt.imsave("y_test2.png", y_test[100, :, :], cmap='gray')
-    y_pred = read_cases(flip = False, folder = args.test_path + '/predictions/', name = '/*' + volume_name + '*.nii.gz') #Read predicted segmentation
-    print("Prediction shape: " + str(y_pred.shape))
-    print("Number of 1s: " +  str((y_pred == 1).sum()))
-    print("Number of 0s: " + str((y_pred == 0).sum()))
-    plt.imsave("y_pred.png", y_pred[100, :, :], cmap='gray')
 
-    print("Dice score before optimization: ")
-    check_predictions(y_test, y_pred)
+    pred_list = os.listdir(args.test_path + '/predictions/')
+    pred_list = list(filter(lambda x: 'nii.gz' in x, pred_list))
+    pred_list = sorted(pred_list)
 
-    # Apply custom optimization
-    y_pred_optimized = optimize(y_pred)
+    dice_scores = []
+    dice_scores_opt = []
 
-    print("Dice score after optimization: ")
-    check_predictions(y_test, y_pred_optimized)
+    for count, filename in enumerate (pred_list):
+
+        print("volume filename is: " + filename)
+
+        y_pred = read_cases(flip = False, folder = args.test_path + '/predictions/', name = filename) #Read predicted segmentation
+        print("Prediction shape: " + str(y_pred.shape))
+        plt.imsave("y_pred.png", y_pred[100, :, :], cmap='gray')
+
+        label_filename = label_list[count]
+        print("label filename is " + label_filename)
+
+        y_test = read_cases(flip = True, folder=args.test_path + '/test/', name = label_filename)  #Read test labels
+        print("Label reread shape: " + str(y_test.shape))
+        plt.imsave("y_test2.png", y_test[100, :, :], cmap='gray')
+
+        if (y_pred.shape != y_test.shape):
+            raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
+
+        print("Dice score before optimization: ")
+        current_dice_score = check_predictions(y_test, y_pred)
+        dice_scores.append(current_dice_score)
+
+        # Apply custom optimization
+        y_pred_optimized = optimize(y_pred)
+
+        print("Dice score after optimization: ")
+        current_dice_score_opt = check_predictions(y_test, y_pred_optimized)
+        dice_scores_opt.append(current_dice_score_opt)
+
+    print("std of dice_scores : ", np.std(dice_scores, dtype=np.float32))
+    print("mean of dice_scores : ", np.mean(dice_scores, dtype=np.float32))
+    print("std of dice_scores_opt : ", np.std(dice_scores_opt, dtype=np.float32))
+    print("mean of dice_scores_opt : ", np.mean(dice_scores_opt, dtype=np.float32))
