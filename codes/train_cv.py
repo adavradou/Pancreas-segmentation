@@ -1,5 +1,3 @@
-#!/usr/bin/env python2
-# -*- coding: utf-8 -*-
 """
 Created on Sun Mar 21 2021
 @author: Agapi Davradou
@@ -8,93 +6,33 @@ This module contains the main code for training the model.
 """
 
 from __future__ import division, print_function
-import os
 from functools import partial
-import tensorflow as tf
 from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.callbacks import ModelCheckpoint
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
-import matplotlib.pyplot as plt
-from skimage.exposure import equalize_adapthist
 from models import *
 from metrics import dice_coef, dice_coef_loss
-from augmenters import *
 from sklearn.model_selection import KFold
+from dataloader import *
+import tensorflow as tf
+import matplotlib.pyplot as plt
 import gc
-from argparser import args
+import enum
 
 
-def img_resize(imgs, img_rows, img_cols, equalize=True):
-    new_imgs = np.zeros([len(imgs), img_rows, img_cols])
-    for mm, img in enumerate(imgs):
-        if equalize:
-            img = equalize_adapthist(img, clip_limit=0.05)
-            # img = clahe.apply(cv2.convertScaleAbs(img))
 
-        new_imgs[mm] = cv2.resize(img, (img_rows, img_cols), interpolation=cv2.INTER_NEAREST)
+class Dataset(enum.Enum):
+    train = 1
+    test = 2
 
-    return new_imgs
-
-
-def data_to_array(img_rows, img_cols):
-    print("-" * 30)
-    print("Converting dataset to .npy format ...")
-    print("-" * 30)
-
-    train_list = os.listdir('../data/train/')
-    train_list = filter(lambda x: '.nii.gz' in x, train_list)
-    train_list = sorted(train_list)
-
-    images = []
-    masks = []
-    for filename in train_list:
-
-        itkimage = sitk.ReadImage(args.input_path + '/train/' + filename)
-        itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip to show correct.
-        imgs = sitk.GetArrayFromImage(itkimage)
-
-        if 'label' in filename.lower():
-            imgs = img_resize(imgs, img_rows, img_cols, equalize=False)
-            masks.append(imgs)
-
-        else:
-            imgs = img_resize(imgs, img_rows, img_cols, equalize=False)
-            images.append(imgs)
-
-    images = np.concatenate(images, axis=0).reshape(-1, img_rows, img_cols, 1)
-    masks = np.concatenate(masks, axis=0).reshape(-1, img_rows, img_cols, 1)
-    masks = masks.astype(int)
-
-    # Smooth images using CurvatureFlow
-    images = smooth_images(images)
-
-    np.save(args.input_path + '/X_train.npy', images)
-    np.save(args.input_path + '/y_train.npy', masks)
-
-    print("-" * 30)
-    print("Saved train.npy")
-    print("-" * 30)
-
-
-def load_data():
-    print("-" * 30)
-    print("Loading data ...")
-
-    X_train = np.load(args.input_path + '/X_train.npy')
-    y_train = np.load(args.input_path + '/y_train.npy')
-
-    print("Data loading finished.")
-    print("-" * 30)
-
-    return X_train, y_train
 
 
 def get_model_name(k):
-    return 'model_' + str(k) + '.h5'
+    return args.output_path + '/model_' + str(k) + '.h5'
 
 
-def plot_graphs(model_hist, foldNumber):
+def plot_graphs(model_hist, fold_number):
     acc = model_hist.history['dice_coef']
     val_acc = model_hist.history['val_dice_coef']
     loss = model_hist.history['loss']
@@ -108,7 +46,7 @@ def plot_graphs(model_hist, foldNumber):
     plt.ylabel('Dice coefficient')
     plt.title('Model accuracy')
     plt.legend(['Train', 'Validation'], loc='center right')
-    plt.savefig('accuracy_fold' + str(foldNumber) +'_.png')
+    plt.savefig(args.output_path + 'accuracy_fold' + str(fold_number) +'_.png')
 
     # Plot loss graph
     plt.clf()
@@ -118,12 +56,14 @@ def plot_graphs(model_hist, foldNumber):
     plt.ylabel('Loss')
     plt.title('Model loss')
     plt.legend(['Train', 'Validation'], loc='center right')
-    plt.savefig('loss_fold' + str(foldNumber) +'_.png')
+    plt.savefig(args.output_path + 'loss_fold' + str(fold_number) +'_.png')
 
 
 def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True):
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+
     if regenerate:
-        data_to_array(img_rows, img_cols)
+        data_to_array(img_rows, img_cols, Dataset.train)
 
     kf = KFold(n_splits=args.folds)
 
@@ -134,8 +74,8 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
     print("Dataset shape: " + str(X_train.shape))
 
     # Save a slice of an image and mask on disk, respectively
-    plt.imsave("X_train_" + str(kf) + ".png", X_train[100, :, :, 0], cmap='gray')
-    plt.imsave("y_train_" + str(kf) + ".png", y_train[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "X_train_" + str(kf) + ".png", X_train[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "y_train_" + str(kf) + ".png", y_train[100, :, :, 0], cmap='gray')
 
     # Provide the same seed and keyword arguments to the fit and flow methods
     x, y = np.meshgrid(np.arange(img_rows), np.arange(img_cols), indexing='ij')
@@ -192,7 +132,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
 
         model = UNet((img_rows, img_cols, 1), start_ch=args.channels, depth=args.depth, batchnorm=args.batchnorm,
                      dropout=args.dropout, maxpool=args.maxpool, residual=args.residual)
-        #    model.load_weights('../data/weights.h5')
+        #    model.load_weights(args.input_path + '/weights.h5')
 
         model.summary()
         model_checkpoint = ModelCheckpoint(

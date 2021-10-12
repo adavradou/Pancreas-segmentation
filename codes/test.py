@@ -2,7 +2,9 @@
 Created on Sun Mar 21 2021
 @author: Agapi Davradou
 
-This module contains the main code for training the model.
+This module contains is used to evaluate the model.
+
+To run: python test.py test --weights ../results/model_3.h5 | tee test.txt
 """
 
 from __future__ import division, print_function
@@ -20,8 +22,12 @@ from metrics import *
 from models import *
 from skimage.measure import find_contours
 from tensorflow.keras.optimizers import Adam
+import enum
 
 
+class Dataset(enum.Enum):
+    train = 1
+    test = 2
 
 
 def img_resize(imgs, img_rows, img_cols, equalize=True):
@@ -45,7 +51,7 @@ def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', des
     end_ind = 0
 
     for filename in fileList:
-        itkimage = sitk.ReadImage(folder + filename)
+        itkimage = sitk.ReadImage(filename)
         img = sitk.GetArrayFromImage(itkimage)
         start_ind = end_ind
         end_ind += len(img)
@@ -55,13 +61,15 @@ def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', des
         mask.SetOrigin(itkimage.GetOrigin())
         mask.SetDirection(itkimage.GetDirection())
         mask.SetSpacing(itkimage.GetSpacing())
-        sitk.WriteImage(mask, dest + '/' + filename[:-7] + '_segmentation.nii.gz')
+        sitk.WriteImage(mask, dest + '/' + os.path.basename(filename)[:-7] + '_segmentation.nii.gz')
 
-        if plot:
-            make_test_plots(X_test, y_test, y_pred, volumename=filename)
+    if plot:
+        if not os.path.isdir(args.test_path + '/images/'):
+            os.mkdir(args.test_path + '/images/')
+        make_test_plots(X_test, y_test, y_pred)
 
 
-def make_test_plots(X, y, y_pred, n_best=20, n_worst=20, volumename='test'):
+def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
     # PLotting the results'
     img_rows = X.shape[1]
     img_cols = img_rows
@@ -107,7 +115,7 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20, volumename='test'):
         ax.set_yticks([])
         ax.set_aspect(1)  # aspect ratio of 1
 
-    path = args.test_path + '/images/best_predictions_' + volumename[:-7] + '.png'
+    path = args.test_path + '/images/best_predictions' + '.png'
 
     fig.savefig(path, bbox_inches='tight', dpi=300)
 
@@ -147,7 +155,7 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20, volumename='test'):
         ax.set_yticks([])
         ax.set_aspect(1)  # aspect ratio of 1
 
-    path = args.test_path + '/images/worst_predictions_' + volumename[:-7] + '.png'
+    path = args.test_path + '/images/worst_predictions_' + '.png'
 
     fig.savefig(path, bbox_inches='tight', dpi=300)
 
@@ -200,42 +208,11 @@ def optimize(segm_3D_array):
 
 
 def check_predictions(true_label, prediction):
-    print('Accuracy:', numpy_dice(true_label, prediction))
+    print('Dice score:', numpy_dice(true_label, prediction))
 
     return numpy_dice(true_label, prediction)
 
 
-
-def read_test_data(fileList = args.test_path + '/test/'):
-
-    images = []
-    masks = []
-    for filename in fileList:
-        itkimage = sitk.ReadImage(args.test_path + '/test/' + filename)
-        itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip to show correct.
-        imgs = sitk.GetArrayFromImage(itkimage)
-
-        if 'label' in filename.lower():
-            imgs = img_resize(imgs, args.image_size, args.image_size)
-            masks.append(imgs)
-
-        else:
-            imgs = img_resize(imgs, args.image_size, args.image_size)
-            images.append(imgs)
-
-    images = np.concatenate(images, axis=0).reshape(-1, args.image_size, args.image_size, 1)
-    images = smooth_images(images)
-    masks = np.concatenate(masks, axis=0).reshape(-1, args.image_size, args.image_size, 1)
-    masks = masks.astype(int)
-
-    if (images.shape != masks.shape):
-        raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
-
-    return images, masks
-
-
-
-#def read_cases(the_list=None, flip=True, folder='../data/test/', name='/*segmentation*.nii.gz', num = ''):
 def read_cases(flip, folder, name):
     filenames = glob.glob(folder + name, recursive=True)
 
@@ -248,16 +225,15 @@ def read_cases(flip, folder, name):
         return img
 
 
-
-
 if __name__ == '__main__':
 
     print("-" * 30)
     print("Reading test data ...")
     print("-" * 30)
 
-    test_data_list = os.listdir(args.test_path + '/test/')
-    label_list = list(filter(lambda x: 'label' in x, test_data_list))
+    test_data_list = [f for f in glob.glob(args.test_path + '/test/*' + '/*' + '/*nii*', recursive=True)]
+
+    label_list = list(filter(lambda x: 'mask' in x, test_data_list))
     test_list = list(filter(lambda x: x not in label_list, test_data_list))
     test_data_list = sorted(test_data_list)
     test_list = sorted(test_list)
@@ -266,16 +242,17 @@ if __name__ == '__main__':
     print("test_list: " + str(test_list))
     print("label_list: " + str(label_list))
 
-    images, masks = read_test_data(test_data_list) #Read test data
+    images, masks = data_to_array(args.image_size, args.image_size, Dataset.test) # Read test data
 
-    plt.imsave("test_image.png", images[100, :, :, 0], cmap='gray')
-    plt.imsave("label_image.png", masks[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/test_image.png", images[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/label_image.png", masks[100, :, :, 0], cmap='gray')
     print("Test shape: " + str(images.shape))
     print("Label shape: " + str(masks.shape))
 
     print("-" * 30)
     print("Predicting segmentation ...")
     print("-" * 30)
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     predict_test(test_list, images, masks, plot=args.plot_results)
 
 
@@ -284,7 +261,6 @@ if __name__ == '__main__':
     print("-" * 30)
     del images, masks
     gc.collect()  # Invoke Garbage Collector
-
 
     pred_list = os.listdir(args.test_path + '/predictions/')
     pred_list = list(filter(lambda x: 'nii.gz' in x, pred_list))
@@ -299,14 +275,14 @@ if __name__ == '__main__':
 
         y_pred = read_cases(flip = False, folder = args.test_path + '/predictions/', name = filename) #Read predicted segmentation
         print("Prediction shape: " + str(y_pred.shape))
-        plt.imsave("y_pred.png", y_pred[100, :, :], cmap='gray')
+        plt.imsave(args.output_path + "/y_pred.png", y_pred[100, :, :], cmap='gray')
 
         label_filename = label_list[count]
         print("label filename is " + label_filename)
 
-        y_test = read_cases(flip = True, folder=args.test_path + '/test/', name = label_filename)  #Read test labels
+        y_test = read_cases(flip = True, folder='', name = label_filename)  #Read test labels
         print("Label reread shape: " + str(y_test.shape))
-        plt.imsave("y_test2.png", y_test[100, :, :], cmap='gray')
+        plt.imsave(args.output_path + "/y_test2.png", y_test[100, :, :], cmap='gray')
 
         if (y_pred.shape != y_test.shape):
             raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
