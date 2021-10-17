@@ -4,7 +4,7 @@ Created on Sun Mar 21 2021
 
 This module contains is used to evaluate the model.
 
-To run: python test.py test --weights model_3.h5 | tee test.txt
+Example to run from terminal: python test.py test --weights model_3.h5
 """
 
 from __future__ import division, print_function
@@ -23,7 +23,6 @@ from models import *
 from skimage.measure import find_contours
 from tensorflow.keras.optimizers import Adam
 import enum
-import logging
 
 
 class Dataset(enum.Enum):
@@ -69,6 +68,7 @@ def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', des
 
 
 def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
+    # PLotting the results'
     img_rows = X.shape[1]
     img_cols = img_rows
     axis = tuple(range(1, X.ndim))
@@ -222,49 +222,10 @@ def read_cases(flip, folder, name):
 
 
 
-# a function  to create and save logs in the log files
-def log(path, file):
-    """[Create a log file to record the experiment's logs]
-    Arguments:
-        path {string} -- path to the directory
-        file {string} -- file name
-    Returns:
-        [obj] -- [logger that record logs]
-    """
-
-    # check if the file exist
-    log_file = os.path.join(path, file)
-
-    if not os.path.isfile(log_file):
-        open(log_file, "w+").close()
-
-    console_logging_format = "%(levelname)s %(message)s"
-    file_logging_format = "%(levelname)s: %(asctime)s: %(message)s"
-
-    # configure logger
-    logging.basicConfig(level=logging.INFO, format=console_logging_format)
-    logger = logging.getLogger()
-
-    # create a file handler for output file
-    handler = logging.FileHandler(log_file)
-
-    # set the logging level for log file
-    handler.setLevel(logging.INFO)
-
-    # create a logging format
-    formatter = logging.Formatter(file_logging_format)
-    handler.setFormatter(formatter)
-
-    # add the handlers to the logger
-    logger.addHandler(handler)
-
-    return logger
-
 
 if __name__ == '__main__':
 
-    # set a logger file
-    logger = log(path = args.output_path, file="test.log")
+    logger = log(path = args.output_path, file="test.log") #Set a logger file
 
     logger.info("-" * 30)
     logger.info("Reading test data ...")
@@ -336,7 +297,7 @@ if __name__ == '__main__':
         #current_dice_score_opt = check_predictions(y_test, y_pred_optimized)
         dice_scores_opt.append(check_predictions(y_test, y_pred_optimized))
 
-    logger.info("std of dice_scores : ", np.std(dice_scores, dtype=np.float32))
-    logger.info("mean of dice_scores : ", np.mean(dice_scores, dtype=np.float32))
-    logger.info("std of dice_scores_opt : ", np.std(dice_scores_opt, dtype=np.float32))
-    logger.info("mean of dice_scores_opt : ", np.mean(dice_scores_opt, dtype=np.float32))
+    logger.info("std of dice_scores: " + str(np.std(dice_scores, dtype=np.float32)))
+    logger.info("mean of dice_scores: " + str(np.mean(dice_scores, dtype=np.float32)))
+    logger.info("std of dice_scores_opt: " + str(np.std(dice_scores_opt, dtype=np.float32)))
+    logger.info("mean of dice_scores_opt: " + str(np.mean(dice_scores_opt, dtype=np.float32)))

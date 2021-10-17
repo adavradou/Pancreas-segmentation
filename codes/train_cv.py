@@ -3,6 +3,8 @@ Created on Sun Mar 21 2021
 @author: Agapi Davradou
 
 This module contains the main code for training the model.
+
+Example to run from terminal: python train_cv.py train --epochs 1000 --regenerate True
 """
 
 from __future__ import division, print_function
@@ -21,11 +23,9 @@ import gc
 import enum
 
 
-
 class Dataset(enum.Enum):
     train = 1
     test = 2
-
 
 
 def get_model_name(k):
@@ -71,7 +71,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
     img_rows = X_train.shape[1]
     img_cols = X_train.shape[2]
 
-    print("Dataset shape: " + str(X_train.shape))
+    logger.info("Dataset shape: " + str(X_train.shape))
 
     # Save a slice of an image and mask on disk, respectively
     plt.imsave(args.output_path + "X_train_" + str(kf) + ".png", X_train[100, :, :, 0], cmap='gray')
@@ -96,8 +96,8 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
     fold_var = 1
 
     for train_index, val_index in kf.split(y_train):
-        print("-" * 30)
-        print("Fold " + str(fold_var) + " running")
+        logger.info("-" * 30)
+        logger.info("Fold " + str(fold_var) + " running")
 
         training_data = X_train[train_index]
         mask_data = y_train[train_index]
@@ -107,9 +107,9 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         n_imgs_train = training_data.shape[0]
         n_imgs_valid = validation_data.shape[0]
 
-        print("Train dataset shape: " + str(n_imgs_train))
-        print("Validation dataset shape: " + str(n_imgs_valid))
-        print("-" * 30)
+        logger.info("Train dataset shape: " + str(n_imgs_train))
+        logger.info("Validation dataset shape: " + str(n_imgs_valid))
+        logger.info("-" * 30)
 
         image_datagen = ImageDataGenerator(**data_gen_args)
         mask_datagen = ImageDataGenerator(**data_gen_args)
@@ -134,7 +134,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
                      dropout=args.dropout, maxpool=args.maxpool, residual=args.residual)
         #    model.load_weights(args.input_path + '/weights.h5')
 
-        model.summary()
+        model.summary(print_fn=logger.info)
         model_checkpoint = ModelCheckpoint(
             get_model_name(fold_var), monitor='val_loss', save_best_only=True)
         c_backs = [model_checkpoint]
@@ -153,7 +153,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
             use_multiprocessing=True)
 
         # List all data in history
-        print(model_history.history.keys())
+        logger.info(model_history.history.keys())
 
         plot_graphs(model_history, fold_var)
 
@@ -167,10 +167,10 @@ if __name__ == '__main__':
     import time
 
     start = time.time()
+    logger = log(path = args.output_path, file="train.log") #Set a logger file
     keras_fit_generator(img_rows=args.image_size, img_cols=args.image_size, regenerate=args.regenerate, batch_size=args.batch_size)
-
     end = time.time()
 
-    print("-" * 30)
-    print('Elapsed time:', round((end - start) / 60, 2))
-    print("-" * 30)
+    logger.info("-" * 30)
+    logger.info('Elapsed time:', round((end - start) / 60, 2))
+    logger.info("-" * 30)
