@@ -4,7 +4,7 @@ Created on Sun Mar 21 2021
 
 This module contains is used to evaluate the model.
 
-To run: python test.py test --weights ../results/model_3.h5 | tee test.txt
+To run: python test.py test --weights model_3.h5 | tee test.txt
 """
 
 from __future__ import division, print_function
@@ -23,6 +23,7 @@ from models import *
 from skimage.measure import find_contours
 from tensorflow.keras.optimizers import Adam
 import enum
+import logging
 
 
 class Dataset(enum.Enum):
@@ -64,13 +65,10 @@ def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', des
         sitk.WriteImage(mask, dest + '/' + os.path.basename(filename)[:-7] + '_segmentation.nii.gz')
 
     if plot:
-        if not os.path.isdir(args.test_path + '/images/'):
-            os.mkdir(args.test_path + '/images/')
         make_test_plots(X_test, y_test, y_pred)
 
 
 def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
-    # PLotting the results'
     img_rows = X.shape[1]
     img_cols = img_rows
     axis = tuple(range(1, X.ndim))
@@ -162,7 +160,7 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
 
 def get_model(img_rows, img_cols):
     model = UNet((img_rows, img_cols, 1), start_ch=6, depth=5, batchnorm=True, dropout=0.5, maxpool=True, residual=True)
-    model.load_weights(args.weight_path + '/' + args.weights_name)
+    model.load_weights(args.output_path + '/' + args.weights_name)
     model.compile(optimizer=Adam(), loss=dice_coef_loss, metrics=[dice_coef])
     return model
 
@@ -181,7 +179,7 @@ def resize_pred_to_val(y_pred, shape):
 
 def optimize(segm_3D_array):
     total_slices = segm_3D_array.shape[0]
-    print(total_slices)
+    #print(total_slices)
 
     # iterate through slices
     for current_slice in range(0, total_slices - 1):
@@ -208,8 +206,6 @@ def optimize(segm_3D_array):
 
 
 def check_predictions(true_label, prediction):
-    print('Dice score:', numpy_dice(true_label, prediction))
-
     return numpy_dice(true_label, prediction)
 
 
@@ -225,11 +221,54 @@ def read_cases(flip, folder, name):
         return img
 
 
+
+# a function  to create and save logs in the log files
+def log(path, file):
+    """[Create a log file to record the experiment's logs]
+    Arguments:
+        path {string} -- path to the directory
+        file {string} -- file name
+    Returns:
+        [obj] -- [logger that record logs]
+    """
+
+    # check if the file exist
+    log_file = os.path.join(path, file)
+
+    if not os.path.isfile(log_file):
+        open(log_file, "w+").close()
+
+    console_logging_format = "%(levelname)s %(message)s"
+    file_logging_format = "%(levelname)s: %(asctime)s: %(message)s"
+
+    # configure logger
+    logging.basicConfig(level=logging.INFO, format=console_logging_format)
+    logger = logging.getLogger()
+
+    # create a file handler for output file
+    handler = logging.FileHandler(log_file)
+
+    # set the logging level for log file
+    handler.setLevel(logging.INFO)
+
+    # create a logging format
+    formatter = logging.Formatter(file_logging_format)
+    handler.setFormatter(formatter)
+
+    # add the handlers to the logger
+    logger.addHandler(handler)
+
+    return logger
+
+
 if __name__ == '__main__':
 
-    print("-" * 30)
-    print("Reading test data ...")
-    print("-" * 30)
+    # set a logger file
+    logger = log(path = args.output_path, file="test.log")
+
+    logger.info("-" * 30)
+    logger.info("Reading test data ...")
+    logger.info("-" * 30)
 
     test_data_list = [f for f in glob.glob(args.test_path + '/test/*' + '/*' + '/*nii*', recursive=True)]
 
@@ -238,27 +277,27 @@ if __name__ == '__main__':
     test_data_list = sorted(test_data_list)
     test_list = sorted(test_list)
     label_list = sorted(label_list)
-    print("test_data_list: " + str(test_data_list))
-    print("test_list: " + str(test_list))
-    print("label_list: " + str(label_list))
+    logger.info("test_data_list: " + str(test_data_list))
+    logger.info("test_list: " + str(test_list))
+    logger.info("label_list: " + str(label_list))
 
     images, masks = data_to_array(args.image_size, args.image_size, Dataset.test) # Read test data
 
     plt.imsave(args.output_path + "/test_image.png", images[100, :, :, 0], cmap='gray')
     plt.imsave(args.output_path + "/label_image.png", masks[100, :, :, 0], cmap='gray')
-    print("Test shape: " + str(images.shape))
-    print("Label shape: " + str(masks.shape))
+    logger.info("Test shape: " + str(images.shape))
+    logger.info("Label shape: " + str(masks.shape))
 
-    print("-" * 30)
-    print("Predicting segmentation ...")
-    print("-" * 30)
+    logger.info("-" * 30)
+    logger.info("Predicting segmentation ...")
+    logger.info("-" * 30)
     os.environ["CUDA_VISIBLE_DEVICES"] = "0"
     predict_test(test_list, images, masks, plot=args.plot_results)
 
 
-    print("-" * 30)
-    print("Calculating Dice score ...")
-    print("-" * 30)
+    logger.info("-" * 30)
+    logger.info("Calculating Dice score ...")
+    logger.info("-" * 30)
     del images, masks
     gc.collect()  # Invoke Garbage Collector
 
@@ -271,34 +310,33 @@ if __name__ == '__main__':
 
     for count, filename in enumerate (pred_list):
 
-        print("volume filename is: " + filename)
+        logger.info("\nvolume filename is: " + filename)
 
         y_pred = read_cases(flip = False, folder = args.test_path + '/predictions/', name = filename) #Read predicted segmentation
-        print("Prediction shape: " + str(y_pred.shape))
+        logger.info("Prediction shape: " + str(y_pred.shape))
         plt.imsave(args.output_path + "/y_pred.png", y_pred[100, :, :], cmap='gray')
 
         label_filename = label_list[count]
-        print("label filename is " + label_filename)
+        logger.info("label filename is " + label_filename)
 
         y_test = read_cases(flip = True, folder='', name = label_filename)  #Read test labels
-        print("Label reread shape: " + str(y_test.shape))
+        logger.info("Label reread shape: " + str(y_test.shape))
         plt.imsave(args.output_path + "/y_test2.png", y_test[100, :, :], cmap='gray')
 
         if (y_pred.shape != y_test.shape):
             raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
 
-        print("Dice score before optimization: ")
-        current_dice_score = check_predictions(y_test, y_pred)
-        dice_scores.append(current_dice_score)
+        logger.info("Dice score before optimization: " + str(check_predictions(y_test, y_pred)))
+        dice_scores.append(check_predictions(y_test, y_pred))
 
         # Apply custom optimization
         y_pred_optimized = optimize(y_pred)
 
-        print("Dice score after optimization: ")
-        current_dice_score_opt = check_predictions(y_test, y_pred_optimized)
-        dice_scores_opt.append(current_dice_score_opt)
+        logger.info("Dice score after optimization: " + str(check_predictions(y_test, y_pred_optimized)))
+        #current_dice_score_opt = check_predictions(y_test, y_pred_optimized)
+        dice_scores_opt.append(check_predictions(y_test, y_pred_optimized))
 
-    print("std of dice_scores : ", np.std(dice_scores, dtype=np.float32))
-    print("mean of dice_scores : ", np.mean(dice_scores, dtype=np.float32))
-    print("std of dice_scores_opt : ", np.std(dice_scores_opt, dtype=np.float32))
-    print("mean of dice_scores_opt : ", np.mean(dice_scores_opt, dtype=np.float32))
+    logger.info("std of dice_scores : ", np.std(dice_scores, dtype=np.float32))
+    logger.info("mean of dice_scores : ", np.mean(dice_scores, dtype=np.float32))
+    logger.info("std of dice_scores_opt : ", np.std(dice_scores_opt, dtype=np.float32))
+    logger.info("mean of dice_scores_opt : ", np.mean(dice_scores_opt, dtype=np.float32))

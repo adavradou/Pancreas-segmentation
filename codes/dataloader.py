@@ -66,7 +66,7 @@ def data_to_array(img_rows, img_cols, dataset):
         if imageName and labelName: #Check that both the image and the label are found in the folder
             t_list.append(imageName)
             t_list.append(labelName)
-            print("\nfolder: " + folder)
+            #print("\nfolder: " + folder)
 
     images = []
     masks = []
