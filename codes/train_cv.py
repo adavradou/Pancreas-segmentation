@@ -10,8 +10,6 @@ Example to run from terminal: python train_cv.py train --epochs 1000 --regenerat
 from __future__ import division, print_function
 from functools import partial
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.callbacks import ModelCheckpoint
-from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.preprocessing.image import ImageDataGenerator
 from models import *
 from metrics import dice_coef, dice_coef_loss
@@ -28,10 +26,6 @@ class Dataset(enum.Enum):
     test = 2
 
 
-def get_model_name(k):
-    return args.output_path + '/model_' + str(k) + '.h5'
-
-
 def plot_graphs(model_hist, fold_number):
     acc = model_hist.history['dice_coef']
     val_acc = model_hist.history['val_dice_coef']
@@ -46,7 +40,7 @@ def plot_graphs(model_hist, fold_number):
     plt.ylabel('Dice coefficient')
     plt.title('Model accuracy')
     plt.legend(['Train', 'Validation'], loc='center right')
-    plt.savefig(args.output_path + 'accuracy_fold' + str(fold_number) +'_.png')
+    plt.savefig(args.output_path + '/accuracy_fold' + str(fold_number) +'_.png')
 
     # Plot loss graph
     plt.clf()
@@ -56,7 +50,25 @@ def plot_graphs(model_hist, fold_number):
     plt.ylabel('Loss')
     plt.title('Model loss')
     plt.legend(['Train', 'Validation'], loc='center right')
-    plt.savefig(args.output_path + 'loss_fold' + str(fold_number) +'_.png')
+    plt.savefig(args.output_path + '/loss_fold' + str(fold_number) +'_.png')
+
+
+
+def create_generator(gen_args, x_data, y_data, batch):
+    x_datagen = ImageDataGenerator(**gen_args)
+    y_datagen = ImageDataGenerator(**gen_args)
+
+    seed = args.seed
+    x_datagen.fit(x_data, seed=seed)
+    y_datagen.fit(y_data, seed=seed)
+
+    image_generator = x_datagen.flow(x_data, batch_size=batch, seed=seed)
+    mask_generator = y_datagen.flow(y_data, batch_size=batch, seed=seed)
+
+    data_generator = (pair for pair in zip(image_generator, mask_generator))
+
+    return data_generator
+
 
 
 def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True):
@@ -74,8 +86,8 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
     logger.info("Dataset shape: " + str(X_train.shape))
 
     # Save a slice of an image and mask on disk, respectively
-    plt.imsave(args.output_path + "X_train_" + str(kf) + ".png", X_train[100, :, :, 0], cmap='gray')
-    plt.imsave(args.output_path + "y_train_" + str(kf) + ".png", y_train[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/X_train_" + str(kf) + ".png", X_train[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/y_train_" + str(kf) + ".png", y_train[100, :, :, 0], cmap='gray')
 
     # Provide the same seed and keyword arguments to the fit and flow methods
     x, y = np.meshgrid(np.arange(img_rows), np.arange(img_cols), indexing='ij')
@@ -111,34 +123,20 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         logger.info("Validation dataset shape: " + str(n_imgs_valid))
         logger.info("-" * 30)
 
-        image_datagen = ImageDataGenerator(**data_gen_args)
-        mask_datagen = ImageDataGenerator(**data_gen_args)
-        image_datagen_val = ImageDataGenerator(**data_gen_args)
-        mask_datagen_val = ImageDataGenerator(**data_gen_args)
+        train_generator = create_generator(data_gen_args, training_data, mask_data, batch_size)
+        valid_generator = create_generator(data_gen_args, validation_data, validation_mask_data, batch_size)
 
-        seed = args.seed
-        image_datagen.fit(X_train[train_index], seed=seed)
-        mask_datagen.fit(y_train[train_index], seed=seed)
-        image_datagen_val.fit(X_train[val_index], seed=seed)
-        mask_datagen_val.fit(y_train[val_index], seed=seed)
+        unet_model = unet(img_shape=(img_rows, img_cols, 1),
+                          start_ch=args.start_ch,
+                          dropout=args.dropout,
+                          maxpool=args.maxpool,
+                          residual=args.residual,
+                          model_name=fold_var,
+                          print_model=args.print_model)
 
-        image_generator = image_datagen.flow(training_data, batch_size=batch_size, seed=seed)
-        mask_generator = mask_datagen.flow(mask_data, batch_size=batch_size, seed=seed)
-        image_generator_val = image_datagen_val.flow(validation_data, batch_size=batch_size, seed=seed)
-        mask_generator_val = mask_datagen_val.flow(validation_mask_data, batch_size=batch_size, seed=seed)
-
-        train_generator = (pair for pair in zip(image_generator, mask_generator))
-        valid_generator = (pair for pair in zip(image_generator_val, mask_generator_val))
-
-        model = UNet((img_rows, img_cols, 1), start_ch=args.channels, depth=args.depth, batchnorm=args.batchnorm,
-                     dropout=args.dropout, maxpool=args.maxpool, residual=args.residual)
+        model = unet_model.create_model()
         #    model.load_weights(args.input_path + '/weights.h5')
-
-        model.summary(print_fn=logger.info)
-        model_checkpoint = ModelCheckpoint(
-            get_model_name(fold_var), monitor='val_loss', save_best_only=True)
-        c_backs = [model_checkpoint]
-        c_backs.append(EarlyStopping(monitor='val_loss', min_delta=0.001, patience=15))
+        model_callbacks = unet_model.get_callbacks()
 
         model.compile(optimizer=Adam(lr=args.learningrate), loss=dice_coef_loss, metrics=[dice_coef])
 
@@ -149,8 +147,8 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
             verbose=args.verbose,
             validation_data=valid_generator,
             validation_steps=n_imgs_valid // batch_size,
-            callbacks=c_backs,
-            use_multiprocessing=True)
+            callbacks=model_callbacks,
+            use_multiprocessing=False)
 
         # List all data in history
         logger.info(model_history.history.keys())
@@ -158,7 +156,7 @@ def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True)
         plot_graphs(model_history, fold_var)
 
         tf.keras.backend.clear_session()
-        del training_data, mask_data, image_generator, mask_generator, image_generator_val, mask_generator_val, train_generator, valid_generator
+        del training_data, mask_data, train_generator, valid_generator
         gc.collect() # Invoke Garbage Collector
         fold_var += 1
 
@@ -172,5 +170,5 @@ if __name__ == '__main__':
     end = time.time()
 
     logger.info("-" * 30)
-    logger.info('Elapsed time:', round((end - start) / 60, 2))
+    logger.info('Elapsed time:', str(round((end - start) / 60, 2)))
     logger.info("-" * 30)

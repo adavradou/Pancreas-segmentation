@@ -38,6 +38,21 @@ def img_resize(imgs, img_rows, img_cols, equalize=True):
     return new_imgs
 
 
+def get_model(img_rows, img_cols):
+    unet_model = unet(img_shape=(img_rows, img_cols, 1),
+                           start_ch=args.start_ch,
+                           dropout=args.dropout,
+                           maxpool=args.maxpool,
+                           residual=args.residual,
+                           print_model=args.print_model)
+
+    model = unet_model.create_model()
+    model.load_weights(args.output_path + '/' + args.weights_name)
+    model.compile(optimizer=Adam(), loss=dice_coef_loss, metrics=[dice_coef])
+
+    return model
+
+
 def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', dest=args.test_path + '/predictions/', plot=False):
     if not os.path.isdir(dest):
         os.mkdir(dest)
@@ -157,12 +172,6 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
 
     fig.savefig(path, bbox_inches='tight', dpi=300)
 
-
-def get_model(img_rows, img_cols):
-    model = UNet((img_rows, img_cols, 1), start_ch=6, depth=5, batchnorm=True, dropout=0.5, maxpool=True, residual=True)
-    model.load_weights(args.output_path + '/' + args.weights_name)
-    model.compile(optimizer=Adam(), loss=dice_coef_loss, metrics=[dice_coef])
-    return model
 
 
 def resize_pred_to_val(y_pred, shape):
