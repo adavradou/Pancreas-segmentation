@@ -30,13 +30,6 @@ class Dataset(enum.Enum):
     test = 2
 
 
-def img_resize(imgs, img_rows, img_cols, equalize=True):
-    new_imgs = np.zeros([len(imgs), img_rows, img_cols])
-    for mm, img in enumerate(imgs):
-        new_imgs[mm] = cv2.resize(img, (img_rows, img_cols), interpolation=cv2.INTER_NEAREST)
-
-    return new_imgs
-
 
 def get_model(img_rows, img_cols):
     unet_model = unet(img_shape=(img_rows, img_cols, 1),
