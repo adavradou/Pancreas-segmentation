@@ -43,9 +43,9 @@ def data_to_array(img_rows, img_cols, dataset):
     t_list = []
 
     if (dataset.name == 'train'):
-        foldernames = glob.glob(args.input_path + '/train/*' + "/*/", recursive = True)
+        foldernames = glob.glob(args.input_path + '/train' + "/*/", recursive = True)
     elif (dataset.name == 'test'):
-        foldernames = glob.glob(args.test_path + '/test/*' + "/*/", recursive=True)
+        foldernames = glob.glob(args.test_path + '/test' + "/*/", recursive=True)
 
     foldernames = [x for x in foldernames if "MACOS" not in x]  # Remove MACOS folders
     foldernames = sorted(foldernames)
@@ -55,31 +55,44 @@ def data_to_array(img_rows, img_cols, dataset):
         labelName = ""
         #pdb.set_trace()
         files = glob.glob(folder + '/*nii*', recursive = True)
+        files = [x for x in files if "L.nii" not in x]
+
         for f in files:
             if not re.findall("L.nii$", f):
                 images = re.findall("[0-9]+.nii.gz", f)
-                labels = re.findall("mask", f)
+                labels = re.findall("P.nii", f)
                 if images:
                     imageName = f
                 if labels:
                     labelName = f
         if imageName and labelName: #Check that both the image and the label are found in the folder
-            t_list.append(imageName)
-            t_list.append(labelName)
-            #print("\nfolder: " + folder)
+            imgName = sitk.ReadImage(imageName)
+            lblName = sitk.ReadImage(labelName)
+            imgArray = sitk.GetArrayViewFromImage(imgName)
+            lblArray = sitk.GetArrayViewFromImage(lblName)
+            if (imgArray.shape == lblArray.shape): #Check they have the same size
+                t_list.append(imageName)
+                t_list.append(labelName)
+                #print("\nfolder: " + folder)
+            else:
+                logging.info('Image and label shapes for filename %1 do not match.', f)
 
+    logging.info("Data list: " + str(t_list))
     images = []
     masks = []
 
     for filename in t_list:
         itkimage = sitk.ReadImage(filename)
-        itkimage = sitk.Flip(itkimage, [False, True, False])  # Flip to show correct.
+
+        if 'mask' in filename.lower():
+            if args.preprocess_label:
+                itkimage = preprocess_label(itkimage)
+
         imgs = sitk.GetArrayFromImage(itkimage)
 
         if 'mask' in filename.lower():
             imgs = img_resize(imgs, img_rows, img_cols)
             masks.append(imgs)
-
         else:
             imgs = img_resize(imgs, img_rows, img_cols)
             images.append(imgs)
@@ -100,7 +113,20 @@ def data_to_array(img_rows, img_cols, dataset):
         print("-" * 30)
 
     elif (dataset.name == 'test'):
-        return images, masks
+        return images, masks, t_list
+
+
+def preprocess_label(img):
+    # Apply filter to binarize the mask
+    thresholdFilter = sitk.BinaryThresholdImageFilter()
+    thresholdFilter.SetLowerThreshold(1)
+    thresholdFilter.SetUpperThreshold(2)
+    binarizedImg = thresholdFilter.Execute(img)
+
+    # Apply BinaryMorphologicalClosing to fill the holes in the mask
+    filteredImage = sitk.BinaryMorphologicalClosing(binarizedImg, (3, 3, 1), sitk.sitkBall)
+
+    return filteredImage
 
 
 def load_data():

@@ -77,6 +77,9 @@ parser_train.add_argument("--model_name", default='model',
 parser_train.add_argument("--verbose", type=int,
                     default=2,
                     help="Specifies verbosity mode (0 = silent, 1= progress bar, 2 = one line per epoch)")
+parser_train.add_argument("--preprocess_label", type=str2bool,
+                    default=True,
+                    help="Binarize and filter the labels")
 
 
 
@@ -130,6 +133,9 @@ parser_test.add_argument("--model_name", default='model',
 parser_test.add_argument("--plot_results", type=str2bool,
                     default=True,
                     help="Plot test results")
+parser_test.add_argument("--preprocess_label", type=str2bool,
+                    default=True,
+                    help="Binarize and filter the labels")
 
 
 args = parser.parse_args()

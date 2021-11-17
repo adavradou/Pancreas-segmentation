@@ -4,7 +4,7 @@ Created on Sun Mar 21 2021
 
 This module contains the main code for training the model.
 
-Example to run from terminal: python train_cv.py train --epochs 1000 --regenerate True
+Example to run from terminal: python train_cv.py train --epochs 1000 --regenerate True --preprocess_label False
 """
 
 from __future__ import division, print_function
@@ -72,7 +72,7 @@ def create_generator(gen_args, x_data, y_data, batch):
 
 
 def keras_fit_generator(img_rows=96, img_cols=96, batch_size=8, regenerate=True):
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
     if regenerate:
         data_to_array(img_rows, img_cols, Dataset.train)

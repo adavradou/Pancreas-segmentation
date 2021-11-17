@@ -4,10 +4,13 @@ Created on Sun Mar 21 2021
 
 This module contains is used to evaluate the model.
 
-Example to run from terminal: python test.py test --weights model_3.h5
+Example to run from terminal: python test.py test --weights model_3.h5 --preprocess_label False
 """
 
 from __future__ import division, print_function
+
+import os.path
+
 import matplotlib.gridspec as gridspec
 import matplotlib.pyplot as plt
 plt.switch_backend('agg')
@@ -46,7 +49,7 @@ def get_model(img_rows, img_cols):
     return model
 
 
-def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', dest=args.test_path + '/predictions/', plot=False):
+def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', dest=args.output_path + '/predictions/', plot=False):
     if not os.path.isdir(dest):
         os.mkdir(dest)
 
@@ -76,6 +79,11 @@ def predict_test(fileList, X_test, y_test, folder=args.test_path + '/test/', des
 
 
 def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
+
+    imgs_out_path = args.output_path + '/images/'
+    if not os.path.isdir(imgs_out_path):
+        os.mkdir(imgs_out_path)
+
     # PLotting the results'
     img_rows = X.shape[1]
     img_cols = img_rows
@@ -121,7 +129,7 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
         ax.set_yticks([])
         ax.set_aspect(1)  # aspect ratio of 1
 
-    path = args.test_path + '/images/best_predictions' + '.png'
+    path = imgs_out_path + '/best_predictions' + '.png'
 
     fig.savefig(path, bbox_inches='tight', dpi=300)
 
@@ -161,7 +169,7 @@ def make_test_plots(X, y, y_pred, n_best=20, n_worst=20):
         ax.set_yticks([])
         ax.set_aspect(1)  # aspect ratio of 1
 
-    path = args.test_path + '/images/worst_predictions_' + '.png'
+    path = imgs_out_path + '/worst_predictions_' + '.png'
 
     fig.savefig(path, bbox_inches='tight', dpi=300)
 
@@ -211,13 +219,13 @@ def check_predictions(true_label, prediction):
     return numpy_dice(true_label, prediction)
 
 
-def read_cases(flip, folder, name):
+def read_cases(folder, name):
     filenames = glob.glob(folder + name, recursive=True)
 
     for filename in filenames:
         itkimage = sitk.ReadImage(filename)
-        if flip:
-            itkimage = sitk.Flip(itkimage, [False, True, False])
+        if (args.preprocess_label == True):
+            itkimage = preprocess_label(itkimage)
         img = sitk.GetArrayFromImage(itkimage)
 
         return img
@@ -233,28 +241,27 @@ if __name__ == '__main__':
     logger.info("Reading test data ...")
     logger.info("-" * 30)
 
-    test_data_list = [f for f in glob.glob(args.test_path + '/test/*' + '/*' + '/*nii*', recursive=True)]
+    images, masks, dataloader_list = data_to_array(args.image_size, args.image_size, Dataset.test) # Read test data
 
-    label_list = list(filter(lambda x: 'mask' in x, test_data_list))
-    test_list = list(filter(lambda x: x not in label_list, test_data_list))
-    test_data_list = sorted(test_data_list)
+    label_list = list(filter(lambda x: 'P.nii' in x, dataloader_list))
+    test_list = list(filter(lambda x: x not in label_list, dataloader_list))
     test_list = sorted(test_list)
     label_list = sorted(label_list)
-    logger.info("test_data_list: " + str(test_data_list))
     logger.info("test_list: " + str(test_list))
     logger.info("label_list: " + str(label_list))
 
-    images, masks = data_to_array(args.image_size, args.image_size, Dataset.test) # Read test data
+    if (len(test_list) != len(label_list)):
+        raise NameError('The sizes of the image and label lists are not equal')
 
-    plt.imsave(args.output_path + "/test_image.png", images[100, :, :, 0], cmap='gray')
-    plt.imsave(args.output_path + "/label_image.png", masks[100, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/test_image.png", images[97, :, :, 0], cmap='gray')
+    plt.imsave(args.output_path + "/label_image.png", masks[97, :, :, 0], cmap='gray')
     logger.info("Test shape: " + str(images.shape))
     logger.info("Label shape: " + str(masks.shape))
 
     logger.info("-" * 30)
     logger.info("Predicting segmentation ...")
     logger.info("-" * 30)
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
     predict_test(test_list, images, masks, plot=args.plot_results)
 
 
@@ -264,7 +271,7 @@ if __name__ == '__main__':
     del images, masks
     gc.collect()  # Invoke Garbage Collector
 
-    pred_list = os.listdir(args.test_path + '/predictions/')
+    pred_list = os.listdir(args.output_path + '/predictions/')
     pred_list = list(filter(lambda x: 'nii.gz' in x, pred_list))
     pred_list = sorted(pred_list)
 
@@ -275,16 +282,21 @@ if __name__ == '__main__':
 
         logger.info("\nvolume filename is: " + filename)
 
-        y_pred = read_cases(flip = False, folder = args.test_path + '/predictions/', name = filename) #Read predicted segmentation
+        y_pred = read_cases(folder = args.output_path + '/predictions/', name = filename) #Read predicted segmentation
         logger.info("Prediction shape: " + str(y_pred.shape))
-        plt.imsave(args.output_path + "/y_pred.png", y_pred[100, :, :], cmap='gray')
+        plt.imsave(args.output_path + "/y_pred.png", y_pred[97, :, :], cmap='gray')
+
+        for i, j in enumerate(label_list):
+            if os.path.basename(filename) in j:
+                label_filename = label_list[i]
+                logger.info("DEBUG: " + os.path.basename(filename) + " " + label_list[i])
 
         label_filename = label_list[count]
         logger.info("label filename is " + label_filename)
 
-        y_test = read_cases(flip = True, folder='', name = label_filename)  #Read test labels
+        y_test = read_cases(folder='', name = label_filename)  #Read test labels
         logger.info("Label reread shape: " + str(y_test.shape))
-        plt.imsave(args.output_path + "/y_test2.png", y_test[100, :, :], cmap='gray')
+        plt.imsave(args.output_path + "/y_test.png", y_test[97, :, :], cmap='gray')
 
         if (y_pred.shape != y_test.shape):
             raise NameError('Prediction and label shapes for filename %1 do not match.', filename)
