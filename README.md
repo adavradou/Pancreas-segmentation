@@ -1,4 +1,4 @@
-# U-Net
+# Pancreas segmantation
 A U-Net network for pancreas segmentation in CT-Scans.
 
 
